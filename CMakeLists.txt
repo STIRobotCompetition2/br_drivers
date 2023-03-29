@@ -9,7 +9,12 @@ endif()
 find_package(ament_cmake REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
+find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+
+
 find_package(OpenCV REQUIRED)
+find_package(std_srvs REQUIRED)
+
 find_package(sensor_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(cv_bridge REQUIRED)
@@ -30,6 +35,9 @@ endif()
 ament_package()
 
 add_executable(camera_driver src/camera_driver.cpp)
+add_executable(mpu9150_driver src/mpu9150_driver.cpp)
+target_link_libraries (mpu9150_driver Eigen3::Eigen)
+
 
 ament_target_dependencies(
     camera_driver
@@ -39,10 +47,24 @@ ament_target_dependencies(
     cv_bridge
 )
 
+ament_target_dependencies(
+    mpu9150_driver
+    sensor_msgs
+    rclcpp
+    std_srvs
+    
+)
+
 install(TARGETS
   camera_driver
   DESTINATION lib/${PROJECT_NAME}/
 )
+
+install(TARGETS
+  mpu9150_driver
+  DESTINATION lib/${PROJECT_NAME}/
+)
+
 
 
 
