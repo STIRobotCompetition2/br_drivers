@@ -11,8 +11,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <eigen3/Eigen/Geometry>
-#define G 9.81
-#define F 50.
+
 
 using namespace std::placeholders;
 class IMUNode : public rclcpp::Node
@@ -20,6 +19,7 @@ class IMUNode : public rclcpp::Node
   public:
   IMUNode() : Node("imu_node"), fd(-1), omega(Eigen::Matrix4d::Zero()), gyro_offset(Eigen::Vector3d::Zero()), acc_offset(Eigen::Vector3d::Zero())
   {
+    
     // Set up I2C connection to MPU9150
     fd = open("/dev/i2c-1", O_RDWR);
     ioctl(fd, I2C_SLAVE, 0x68);
@@ -48,10 +48,30 @@ class IMUNode : public rclcpp::Node
 
     q << 1,0,0,0;
 
+    this->declare_parameter("imu_model", "MPU9150");
+
+
+    this->declare_parameter("update_frequency", 100.);
+    update_frequency_ = this->get_parameter("update_frequency").as_double();
+
+    this->declare_parameter("calibrate_on_start", true);
+    calibrate_on_start_ = this->get_parameter("calibrate_on_start").as_bool();
+
+    this->declare_parameter("quaternion_computation", true);
+    quaternion_computation_ = this->get_parameter("quaternion_computation").as_bool();
+
+    this->declare_parameter("measure_temperature", true);
+    measure_temperature_ = this->get_parameter("measure_temperature").as_bool();
+
+    this->declare_parameter("gravitational_acceleration", 9.81);
+    gravitational_acceleration_ = this->get_parameter("gravitational_acceleration").as_double();
+
+
+
     acc_covariance.fill(0);
-    acc_covariance.at(0) = std::pow(4 * G * 1e-3, 2);
-    acc_covariance.at(4) = std::pow(4 * G * 1e-3, 2);
-    acc_covariance.at(8) = std::pow(4 * G * 1e-3, 2);
+    acc_covariance.at(0) = std::pow(4 * gravitational_acceleration_ * 1e-3, 2);
+    acc_covariance.at(4) = std::pow(4 * gravitational_acceleration_ * 1e-3, 2);
+    acc_covariance.at(8) = std::pow(4 * gravitational_acceleration_ * 1e-3, 2);
 
     gyro_covariance.fill(0);
     gyro_covariance.at(0) = std::pow(0.6 * M_PI / 180 * 1e-3, 2);
@@ -63,9 +83,16 @@ class IMUNode : public rclcpp::Node
     temp_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>("temperature", 10);
 
 
+    if(calibrate_on_start_){
+      std::shared_ptr<rmw_request_id_t> request_header(new rmw_request_id_t());
+      std::shared_ptr<std_srvs::srv::Trigger::Request> request (new std_srvs::srv::Trigger::Request());
+      std::shared_ptr<std_srvs::srv::Trigger::Response> response(new std_srvs::srv::Trigger::Response());
+      this->calibrateCallback(request_header, request, response);
+    }
+
+
     // Set up timer for publishing IMU data
-    
-    timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<size_t>(1e3 / F)), std::bind(&IMUNode::timerCallback, this));
+    timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<size_t>(1e3 / update_frequency_)), std::bind(&IMUNode::timerCallback, this));
     calib_server_ = this->create_service<std_srvs::srv::Trigger>("calibrate", std::bind(&IMUNode::calibrateCallback, this, _1, _2, _3));
   }
 
@@ -81,15 +108,15 @@ class IMUNode : public rclcpp::Node
         int16_t ax = buffer[0] << 8 | buffer[1];
         int16_t ay = buffer[2] << 8 | buffer[3];
         int16_t az = buffer[4] << 8 | buffer[5];
-        int16_t temp = buffer[6] << 8 | buffer[7];
+        
         int16_t gx = buffer[8] << 8 | buffer[9];
         int16_t gy = buffer[10] << 8 | buffer[11];
         int16_t gz = buffer[12] << 8 | buffer[13];
 
         Eigen::Vector3d a(
-          ax / 16384.0 * G,
-          ay / 16384.0 * G,
-          az / 16384.0 * G
+          ax / 16384.0 * gravitational_acceleration_,
+          ay / 16384.0 * gravitational_acceleration_,
+          az / 16384.0 * gravitational_acceleration_
           );
         
 
@@ -104,16 +131,18 @@ class IMUNode : public rclcpp::Node
           a -= acc_offset;
         }
 
+        if(quaternion_computation_){
+          // https://ahrs.readthedocs.io/en/latest/filters/angular.html
+          omega <<  0, -w(0), -w(1), -w(2),
+                    w(0), 0, w(2), -w(1),
+                    w(1), -w(2), 0, w(0),
+                    w(2), w(1), -w(0), 0;
 
-        // https://ahrs.readthedocs.io/en/latest/filters/angular.html
-        omega <<  0, -w(0), -w(1), -w(2),
-                  w(0), 0, w(2), -w(1),
-                  w(1), -w(2), 0, w(0),
-                  w(2), w(1), -w(0), 0;
-
-        double w_norm = w.norm();
-        q =  (1 / w_norm * sin(w_norm * 1. / F / 2.) * omega + Eigen::Matrix4d::Identity() * std::cos(w_norm * 1. / F / 2.)) * q;
-        q /= q.norm();
+          double w_norm = w.norm();
+          q =  (1 / w_norm * sin(w_norm * 1. / update_frequency_ / 2.) * omega + Eigen::Matrix4d::Identity() * std::cos(w_norm * 1. / update_frequency_ / 2.)) * q;
+          q /= q.norm();
+        }
+        
 
         // Create IMU message
         imu_msg.header.stamp = this->get_clock()->now();
@@ -135,11 +164,13 @@ class IMUNode : public rclcpp::Node
         imu_msg.angular_velocity_covariance = gyro_covariance;
         imu_msg.linear_acceleration_covariance = acc_covariance;
 
-        // Publish IMU message
-
-        temp_msg.header = imu_msg.header;
-        temp_msg.temperature = temp / 340. + 35.;
-        temp_msg.variance = -1;
+        if(measure_temperature_){
+          int16_t temp = buffer[6] << 8 | buffer[7];
+          temp_msg.header = imu_msg.header;
+          temp_msg.temperature = temp / 340. + 35.;
+          temp_msg.variance = -1;
+        }
+        
   }
 
   void calibrateCallback( 
@@ -184,7 +215,7 @@ class IMUNode : public rclcpp::Node
         getData(imu_msg, temp_msg);
         // Publish IMU message
         imu_pub_->publish(imu_msg);
-        temp_pub_->publish(temp_msg);
+        if(measure_temperature_) temp_pub_->publish(temp_msg);
         i2c_lock.unlock();
     }
 
@@ -204,6 +235,12 @@ class IMUNode : public rclcpp::Node
   std::array<double, 9u> acc_covariance;
   std::array<double, 9u> gyro_covariance;
   std::mutex i2c_lock;
+
+  double update_frequency_;
+  bool calibrate_on_start_;
+  bool quaternion_computation_;
+  bool measure_temperature_;
+  double gravitational_acceleration_;
 
 };
 
