@@ -12,6 +12,7 @@
 #include <sys/ioctl.h>
 #include <eigen3/Eigen/Geometry>
 #define G 9.81
+#define F 50.
 
 using namespace std::placeholders;
 class IMUNode : public rclcpp::Node
@@ -64,7 +65,7 @@ class IMUNode : public rclcpp::Node
 
     // Set up timer for publishing IMU data
     
-    timer_ = this->create_wall_timer(std::chrono::milliseconds(10), std::bind(&IMUNode::timerCallback, this));
+    timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<size_t>(1e3 / F)), std::bind(&IMUNode::timerCallback, this));
     calib_server_ = this->create_service<std_srvs::srv::Trigger>("calibrate", std::bind(&IMUNode::calibrateCallback, this, _1, _2, _3));
   }
 
@@ -82,42 +83,48 @@ class IMUNode : public rclcpp::Node
         int16_t az = buffer[4] << 8 | buffer[5];
         int16_t temp = buffer[6] << 8 | buffer[7];
         int16_t gx = buffer[8] << 8 | buffer[9];
-        double wx = gx / 131.0 * M_PI / 180.0;
         int16_t gy = buffer[10] << 8 | buffer[11];
-        double wy = gy / 131.0 * M_PI / 180.0;
-
         int16_t gz = buffer[12] << 8 | buffer[13];
-        double wz = gz / 131.0 * M_PI / 180.0;
+
+        Eigen::Vector3d a(
+          ax / 16384.0 * G,
+          ay / 16384.0 * G,
+          az / 16384.0 * G
+          );
+        
+
+        Eigen::Vector3d w(
+          gx / 131.0 * M_PI / 180.0, 
+          gy / 131.0 * M_PI / 180.0, 
+          gz / 131.0 * M_PI / 180.0
+          );
+        
+        if(apply_offset){
+          w -= gyro_offset;
+          a -= acc_offset;
+        }
 
 
         // https://ahrs.readthedocs.io/en/latest/filters/angular.html
-        omega <<  0, -wx, -wy, -wz,
-                  wx, 0, wz, -wy,
-                  wy, -wz, 0, wx,
-                  wz, wy, -wx, 0;
+        omega <<  0, -w(0), -w(1), -w(2),
+                  w(0), 0, w(2), -w(1),
+                  w(1), -w(2), 0, w(0),
+                  w(2), w(1), -w(0), 0;
 
-        q =  (0.5 * 1e-2 * omega + Eigen::Matrix4d::Identity()) * q;
+        double w_norm = w.norm();
+        q =  (1 / w_norm * sin(w_norm * 1. / F / 2.) * omega + Eigen::Matrix4d::Identity() * std::cos(w_norm * 1. / F / 2.)) * q;
         q /= q.norm();
 
         // Create IMU message
         imu_msg.header.stamp = this->get_clock()->now();
         imu_msg.header.stamp.nanosec -= 3e6;    // Due to delay due to low-pass filtering
         imu_msg.header.frame_id = "imu_sensor_link";
-        imu_msg.angular_velocity.x = wx;
-        imu_msg.angular_velocity.y = wy;
-        imu_msg.angular_velocity.z = wz;
-        imu_msg.linear_acceleration.x = ax / 16384.0 * G;
-        imu_msg.linear_acceleration.y = ay / 16384.0 * G;
-        imu_msg.linear_acceleration.z = az / 16384.0 * G;
-
-        if(apply_offset){
-          imu_msg.linear_acceleration.x -= acc_offset.x();
-          imu_msg.linear_acceleration.y -= acc_offset.y();
-          imu_msg.linear_acceleration.z -= acc_offset.z();
-          imu_msg.angular_velocity.x -= gyro_offset.x();
-          imu_msg.angular_velocity.y -= gyro_offset.y();
-          imu_msg.angular_velocity.z -= gyro_offset.z();
-        }
+        imu_msg.angular_velocity.x = w.x();
+        imu_msg.angular_velocity.y = w.y();
+        imu_msg.angular_velocity.z = w.z();
+        imu_msg.linear_acceleration.x = a.x();
+        imu_msg.linear_acceleration.y = a.y();
+        imu_msg.linear_acceleration.z = a.z();
 
         imu_msg.orientation.x = q(1);
         imu_msg.orientation.y = q(2);
