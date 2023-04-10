@@ -13,9 +13,14 @@ find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 
 find_package(OpenCV REQUIRED)
+# find_package(libpigpio REQUIRED)
+
+
 find_package(std_srvs REQUIRED)
 
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+
 find_package(rclcpp REQUIRED)
 find_package(cv_bridge REQUIRED)
 
@@ -36,6 +41,8 @@ ament_package()
 
 add_executable(camera_driver src/camera_driver.cpp)
 add_executable(mpu9150_driver src/mpu9150_driver.cpp)
+add_executable(motors_driver src/motors_driver.cpp)
+
 target_link_libraries (mpu9150_driver Eigen3::Eigen)
 
 
@@ -55,6 +62,14 @@ ament_target_dependencies(
     
 )
 
+ament_target_dependencies(
+    motors_driver
+    rclcpp
+    geometry_msgs    
+)
+
+target_link_libraries(motors_driver pigpiod_if2 rt)
+
 install(TARGETS
   camera_driver
   DESTINATION lib/${PROJECT_NAME}/
@@ -65,10 +80,25 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}/
 )
 
+install(TARGETS
+  motors_driver
+  DESTINATION lib/${PROJECT_NAME}/
+)
+
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}/
 )
+
+install(DIRECTORY
+  urdf
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+
+
+
+
 
 
 
