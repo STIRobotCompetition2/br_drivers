@@ -14,12 +14,12 @@ class CameraDriver : public rclcpp::Node {
     }
     private:
     void run(){
-        rclcpp::Rate video_rate(10);
+        rclcpp::Rate video_rate(5);
         cv::Mat cv_image;
         cv_bridge::CvImage cv_bridge_image;
         sensor_msgs::msg::Image ros_image;
 
-        while(vid_in->isOpened()){
+        while(vid_in->isOpened() && rclcpp::ok()){
             *vid_in >> cv_image;
             cv_bridge_image.image = cv_image;
             cv_bridge_image.toImageMsg(ros_image);
