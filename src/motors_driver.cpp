@@ -32,16 +32,25 @@ using std::placeholders::_1;
 #define PWM_FREQ 100
 //--------------------------------------------------------------
 
-int gpio;
 
 //Function/class------------------------------------------------
-class Motor_driver_subscriber : public rclcpp::Node
+class MotorDriver : public rclcpp::Node
 {
     public:
-        Motor_driver_subscriber() 
+        MotorDriver() 
         : Node("motor_driver")
         {
-            subscription_ = this -> create_subscription<geometry_msgs::msg::Twist>("/cmd_vel",10,std::bind(&Motor_driver_subscriber::topic_callback, this, _1));
+            gpio = pigpio_start("localhost", "8888");
+            if(gpio < 0){
+                RCLCPP_ERROR(this->get_logger(), "Cannot find GPIO daemon at localhost:8888 - Shutting down motor driver. Did you run 'sudo pigpiod'?");
+                rclcpp::shutdown();
+                return;
+            }
+            set_mode(gpio, PWM_GPIO_MOTOR_LEFT,PI_ALT0);
+            set_mode(gpio, PWM_GPIO_MOTOR_RIGHT,PI_ALT0);
+            set_PWM_frequency(gpio, PWM_GPIO_MOTOR_LEFT, PWM_FREQ);
+            set_PWM_frequency(gpio, PWM_GPIO_MOTOR_RIGHT, PWM_FREQ);
+            subscription_ = this-> create_subscription<geometry_msgs::msg::Twist>("/cmd_vel",10,std::bind(&MotorDriver::topic_callback, this, _1));
         }
 
     private:
@@ -51,6 +60,7 @@ class Motor_driver_subscriber : public rclcpp::Node
         double RPML = 0.0;
         double PWM_L = 0.0;
         double PWM_R = 0.0;
+        int gpio;
 
         void topic_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
         {
@@ -89,7 +99,7 @@ class Motor_driver_subscriber : public rclcpp::Node
             //converting RPM's into percentage for pwm
             PWM_L = (RPML-MIN_RPM)*(MAX_PERCENTAGE-MIN_PERCENTAGE)/MAX_RPM + MIN_PERCENTAGE;
             PWM_R = (RPMR-MIN_RPM)*(MAX_PERCENTAGE-MIN_PERCENTAGE)/MAX_RPM + MIN_PERCENTAGE;
-            ;
+            
             //outputting the pwm duty cycle
             set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_LEFT,static_cast<size_t>(fabs(PWM_L)*255./100.)); //fully on is 1000000
             set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_RIGHT,static_cast<size_t>(fabs(PWM_R)*255./100.)); 
@@ -101,22 +111,10 @@ class Motor_driver_subscriber : public rclcpp::Node
 //Main----------------------------------------------------------
 int main(int argc, char **argv)
 {
-    // if(gpioInitialise()<0)
-    // {
-    //     cerr << "Failed to initialise gpio library" << endl;
-    //     return 0;
-    // }
-    // cout << "initialisation success" << endl;
-    gpio = pigpio_start("localhost", "8888");
-    std::cerr << gpio << std::endl;
-    set_mode(gpio, PWM_GPIO_MOTOR_LEFT,PI_ALT0);
-    set_mode(gpio, PWM_GPIO_MOTOR_RIGHT,PI_ALT0);
-    set_PWM_frequency(gpio, PWM_GPIO_MOTOR_LEFT, PWM_FREQ);
-    set_PWM_frequency(gpio, PWM_GPIO_MOTOR_RIGHT, PWM_FREQ);
-
-
     rclcpp::init(argc,argv);
-    rclcpp::spin(std::make_shared<Motor_driver_subscriber>());
+    
+    MotorDriver::SharedPtr md(new MotorDriver());
+    rclcpp::spin(md);
 
     rclcpp::shutdown();
     return 0;
