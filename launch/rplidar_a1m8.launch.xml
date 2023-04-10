@@ -1,0 +1,12 @@
+<launch>
+    <node name="lidar_driver" pkg="rplidar_ros" exec="rplidar_composition">
+        <param name="scan_mode" value="Sensitivity"/>
+        <param name="channel_type" value="serial"/>
+        <remap from="scan" to="/lidar/scan"/>
+
+        <param name="serial_port" value="/dev/ttyUSB0"/>
+        <param name="serial_baudrate" value="115200"/>
+        <param name="frame_id" value="lidar_sensor_link"/>
+        <param name="angle_compensate" value="true"/>
+    </node>
+</launch>
