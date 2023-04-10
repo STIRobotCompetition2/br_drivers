@@ -128,7 +128,10 @@ class IMUNode : public rclcpp::Node
         
         if(apply_offset){
           w -= gyro_offset;
-          a -= acc_offset;
+          // VERY SKETCHY BUT WORKS ....
+          a.x() -= acc_offset.x();
+          a.y() -= acc_offset.y();
+
         }
 
         if(quaternion_computation_){

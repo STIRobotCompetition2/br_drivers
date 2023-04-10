@@ -1,7 +1,7 @@
 <launch>
-    <arg name="update_frequency" default="50.0"/>
+    <arg name="update_frequency" default="200.0"/>
     <arg name="calibrate_on_start" default="true"/>
-    <arg name="quaternion_computation" default="true"/>
+    <arg name="quaternion_computation" default="false"/>
     <arg name="measure_temperature" default="false"/>
     <arg name="gravitational_acceleration" default="9.81"/>
 
