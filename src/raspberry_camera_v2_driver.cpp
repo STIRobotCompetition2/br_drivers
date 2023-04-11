@@ -56,11 +56,11 @@ class CameraDriver : public rclcpp::Node {
         sample_camera_timer = this->create_wall_timer(std::chrono::milliseconds(static_cast<size_t>(1e3 * this->get_parameter("sample_period").as_double())), std::bind(&CameraDriver::sampleCameraCallback, this));
         RCLCPP_INFO(this->get_logger(), "Camera driver running");
     }
-    // ~CameraDriver(){
-    //     sample_camera_timer->cancel();
-    //     cam.stopVideo();
-    //     RCLCPP_INFO(this->get_logger(), "Camera Driver shut down properly");
-    // }
+    ~CameraDriver(){
+        sample_camera_timer->cancel();
+        cam.stopVideo();
+        RCLCPP_INFO(this->get_logger(), "Camera Driver shut down properly");
+    }
 
     private:
     void sampleCameraCallback(){

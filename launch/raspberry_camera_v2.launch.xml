@@ -1,0 +1,5 @@
+<launch>
+    <node name="camera_driver" exec="raspberry_camera_v2_driver" pkg="br_drivers">
+        <param from="$(find-pkg-share br_drivers)/config/raspberry_camera_v2.yaml"/>
+    </node>
+</launch>
