@@ -3,6 +3,8 @@
     </include>
     <include file="$(find-pkg-share br_drivers)/launch/rplidar_a1m8.launch.xml">
     </include>
+    <include file="$(find-pkg-share br_drivers)/launch/raspberry_camera_v2.launch.xml">
+    </include>
     <node pkg="robot_state_publisher" exec="robot_state_publisher" name="robot_state_publisher" output="screen">
         <param name="robot_description" value="$(command 'xacro $(find-pkg-share br_drivers)/urdf/state_estimation_testbench.urdf.xacro')"/>
     </node>
