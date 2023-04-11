@@ -14,7 +14,7 @@ find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 find_package(OpenCV REQUIRED)
 # find_package(libpigpio REQUIRED)
-
+# find_package(LIBCAMERA REQUIRED libcamera)
 
 find_package(std_srvs REQUIRED)
 
@@ -25,7 +25,9 @@ find_package(geometry_msgs REQUIRED)
 
 find_package(rclcpp REQUIRED)
 find_package(cv_bridge REQUIRED)
-
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIBCAMERA REQUIRED libcamera)
+include_directories(${LIBCAMERA_INCLUDE_DIRS})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -72,6 +74,8 @@ ament_target_dependencies(
 )
 
 target_link_libraries(motors_driver pigpiod_if2 rt)
+target_link_libraries(camera_driver lccv)
+
 
 install(TARGETS
   camera_driver

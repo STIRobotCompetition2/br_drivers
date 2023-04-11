@@ -6,20 +6,25 @@
 
 #include <sensor_msgs/msg/compressed_image.hpp>
 #include <std_msgs/msg/header.hpp>
-
+#include <lccv.hpp>
 
 
 class CameraDriver : public rclcpp::Node {
     public:
     CameraDriver() : Node("camera_driver"), publish_raw(true), publish_compressed(true){
-        vid_in = std::make_shared<cv::VideoCapture>(cv::VideoCapture(0));
+        cam.options->video_width=1920;
+        cam.options->video_height=1080;
+        cam.options->framerate=10;
+        cam.options->verbose=true;
+        cam.startVideo();
+
         image_raw_pub = this->create_publisher<sensor_msgs::msg::Image>("/camera/image", 1);
         image_compressed_pub = this->create_publisher<sensor_msgs::msg::CompressedImage>("/camera/image/compressed", 1);
         this->run();
     }
     private:
     void run(){
-        rclcpp::Rate video_rate(5);
+        rclcpp::Rate video_rate(10);
         cv::Mat cv_image;
         
         cv_bridge::CvImage cv_bridge_image;
@@ -30,8 +35,7 @@ class CameraDriver : public rclcpp::Node {
         header.frame_id = "camera_sensor_link";
 
 
-        while(vid_in->isOpened() && rclcpp::ok()){
-            *vid_in >> cv_image;
+        while(cam.getVideoFrame(cv_image,10000) && rclcpp::ok()){
             if(publish_raw || publish_compressed){
                 cv_bridge_image.image = cv_image;
                 header.stamp = this->get_clock()->now();
@@ -54,12 +58,15 @@ class CameraDriver : public rclcpp::Node {
 
             if(publish_raw || publish_compressed) RCLCPP_DEBUG(this->get_logger(), "Driver sent picture");
             else RCLCPP_DEBUG(this->get_logger(), "Driver sent picture no picture although loop was executed (no pub-flag true)");
+            video_rate.sleep();
 
         }
+        RCLCPP_WARN(this->get_logger(), "CAM DONE");
+        cam.stopVideo();
 
 
     }
-    std::shared_ptr<cv::VideoCapture> vid_in;
+    lccv::PiCamera cam;
     double rate;
     bool publish_raw;
     bool publish_compressed;
