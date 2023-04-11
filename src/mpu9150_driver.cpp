@@ -17,7 +17,7 @@ using namespace std::placeholders;
 class IMUNode : public rclcpp::Node
 {
   public:
-  IMUNode() : Node("imu_node"), fd(-1), omega(Eigen::Matrix4d::Zero()), gyro_offset(Eigen::Vector3d::Zero()), acc_offset(Eigen::Vector3d::Zero())
+  IMUNode() : Node("imu_node"), fd(-1), omega(Eigen::Matrix4d::Zero()), gyro_offset(Eigen::Vector3d::Zero()), acc_offset(Eigen::Vector3d::Zero()), last_acceleration_(Eigen::Vector3<int16_t>::Zero())
   {
     
     // Set up I2C connection to MPU9150
@@ -50,6 +50,11 @@ class IMUNode : public rclcpp::Node
 
     this->declare_parameter("imu_model", "MPU9150");
 
+    this->declare_parameter("frame_id", "imu_sensor_link");
+    frame_id_ = this->get_parameter("frame_id").as_string();
+
+    this->declare_parameter("i2c_sanity_check", true);
+    i2c_sanity_check_ = this->get_parameter("i2c_sanity_check").as_bool();
 
     this->declare_parameter("update_frequency", 100.);
     update_frequency_ = this->get_parameter("update_frequency").as_double();
@@ -113,6 +118,12 @@ class IMUNode : public rclcpp::Node
         int16_t gy = buffer[10] << 8 | buffer[11];
         int16_t gz = buffer[12] << 8 | buffer[13];
 
+        if(i2c_sanity_check_){
+          if(last_acceleration_(0,0) == ax && last_acceleration_(1,0) == ay && last_acceleration_(2,0) == az)
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000.0, "Is IMU still connected ? I2C received consecutively exactly same data ...");
+          last_acceleration_ << ax, ay, az;
+        }
+
         Eigen::Vector3d a(
           ax / 16384.0 * gravitational_acceleration_,
           ay / 16384.0 * gravitational_acceleration_,
@@ -150,7 +161,7 @@ class IMUNode : public rclcpp::Node
         // Create IMU message
         imu_msg.header.stamp = this->get_clock()->now();
         imu_msg.header.stamp.nanosec -= 3e6;    // Due to delay due to low-pass filtering
-        imu_msg.header.frame_id = "imu_sensor_link";
+        imu_msg.header.frame_id = frame_id_;
         imu_msg.angular_velocity.x = w.x();
         imu_msg.angular_velocity.y = w.y();
         imu_msg.angular_velocity.z = w.z();
@@ -173,6 +184,8 @@ class IMUNode : public rclcpp::Node
           temp_msg.temperature = temp / 340. + 35.;
           temp_msg.variance = -1;
         }
+
+
         
   }
 
@@ -244,6 +257,9 @@ class IMUNode : public rclcpp::Node
   bool quaternion_computation_;
   bool measure_temperature_;
   double gravitational_acceleration_;
+  bool i2c_sanity_check_;
+  std::string frame_id_;
+  Eigen::Matrix<int16_t, 3, 1> last_acceleration_;
 
 };
 
