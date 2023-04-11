@@ -43,7 +43,7 @@ endif()
 
 ament_package()
 
-add_executable(camera_driver src/camera_driver.cpp)
+add_executable(raspberry_camera_v2_driver src/raspberry_camera_v2_driver.cpp)
 add_executable(mpu9150_driver src/mpu9150_driver.cpp)
 add_executable(motors_driver src/motors_driver.cpp)
 
@@ -51,7 +51,7 @@ target_link_libraries (mpu9150_driver Eigen3::Eigen)
 
 
 ament_target_dependencies(
-    camera_driver
+    raspberry_camera_v2_driver
     sensor_msgs
     OpenCV
     rclcpp
@@ -74,11 +74,11 @@ ament_target_dependencies(
 )
 
 target_link_libraries(motors_driver pigpiod_if2 rt)
-target_link_libraries(camera_driver lccv)
+target_link_libraries(raspberry_camera_v2_driver lccv)
 
 
 install(TARGETS
-  camera_driver
+  raspberry_camera_v2_driver
   DESTINATION lib/${PROJECT_NAME}/
 )
 
