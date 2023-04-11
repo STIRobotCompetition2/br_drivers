@@ -1,17 +1,9 @@
 <launch>
-    <arg name="update_frequency" default="200.0"/>
-    <arg name="calibrate_on_start" default="true"/>
-    <arg name="quaternion_computation" default="false"/>
-    <arg name="measure_temperature" default="false"/>
-    <arg name="gravitational_acceleration" default="9.81"/>
+    <arg name="topic_name" default="/imu/data"/>
 
     <node name="imu_driver" exec="mpu9150_driver" pkg="br_drivers">
-        <param name="update_frequency" value="$(var update_frequency)"/>
-        <param name="calibrate_on_start" value="$(var calibrate_on_start)"/>
-        <param name="quaternion_computation" value="$(var quaternion_computation)"/>
-        <param name="measure_temperature" value="$(var measure_temperature)"/>
-        <param name="gravitational_acceleration" value="$(var gravitational_acceleration)"/>
-        <remap from="data" to="/imu/data"/>
+        <param from="$(find-pkg-share br_drivers)/config/mpu9150.yaml"/>
+        <remap from="data" to="$(var topic_name)"/>
     </node>
 
 </launch>
