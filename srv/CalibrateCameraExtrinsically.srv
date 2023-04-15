@@ -1,0 +1,13 @@
+float64 spacing_x_mm
+float64 spacing_y_mm
+uint32  number_in_x
+uint32  number_in_y
+float64 corner_dist_mm
+float64 x_offset_mm
+float64 y_offset_mm
+---
+geometry_msgs/Vector3 offset
+geometry_msgs/Vector3 scaling
+bool success
+string message
+

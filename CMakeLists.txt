@@ -21,14 +21,24 @@ find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
-find_package(geometry_msgs REQUIRED)
 
+find_package(geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
+
 find_package(cv_bridge REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBCAMERA REQUIRED libcamera)
 include_directories(${LIBCAMERA_INCLUDE_DIRS})
+find_package(geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/CalibrateCameraExtrinsically.srv"
+  DEPENDENCIES geometry_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
+)
+
+ament_export_dependencies(rosidl_default_runtime)
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
@@ -46,6 +56,7 @@ ament_package()
 add_executable(raspberry_camera_v2_driver src/raspberry_camera_v2_driver.cpp)
 add_executable(mpu9150_driver src/mpu9150_driver.cpp)
 add_executable(motors_driver src/motors_driver.cpp)
+target_link_libraries (raspberry_camera_v2_driver Eigen3::Eigen)
 
 target_link_libraries (mpu9150_driver Eigen3::Eigen)
 
@@ -57,6 +68,7 @@ ament_target_dependencies(
     rclcpp
     cv_bridge
     std_msgs
+    
 )
 
 ament_target_dependencies(
@@ -75,6 +87,11 @@ ament_target_dependencies(
 
 target_link_libraries(motors_driver pigpiod_if2 rt)
 target_link_libraries(raspberry_camera_v2_driver lccv)
+
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} rosidl_typesupport_cpp)
+
+target_link_libraries(raspberry_camera_v2_driver "${cpp_typesupport_target}")
 
 
 install(TARGETS
@@ -106,6 +123,8 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}/
 )
+
+
 
 
 

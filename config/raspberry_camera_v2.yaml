@@ -1,16 +1,18 @@
 camera_driver:
   ros__parameters:
-    # Low-Level hardware access config
-    libcamera_resolution_width: 1920
-    libcamera_resolution_height: 1080
-    libcamera_resolution_framerate: 30
-    libcamera_verbose: true
+    # Low-Level hardware access config (see https://forums.raspberrypi.com/viewtopic.php?t=341818)
+    libcamera_resolution_width: 1640
+    libcamera_resolution_height: 1232
+    libcamera_resolution_framerate: 10
+    libcamera_verbose: false
     # Metadata
     frame_id: camera_sensor_link
-    sample_period: 0.2
+    ros_sample_period: 0.1
+    ros_resolution_width: 640
+    ros_resolution_height: 480
     # Publish Config
     publish_image_raw: True
     image_raw_topic: /camera/image
-    publish_image_compressed: False
+    publish_image_compressed: True
     image_compressed_topic: /camera/image/compressed
 
