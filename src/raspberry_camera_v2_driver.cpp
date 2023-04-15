@@ -230,13 +230,15 @@ class CameraDriver : public rclcpp::Node {
         X2.resize(markerIds.size() * 4, 2);
         X1.col(1).fill(1);
         X2.col(1).fill(1);
-
-        
-        double y_offset_mm = -1 * (request->number_in_y - 1.) / 2. * request->spacing_y_mm;
+        double y_offset_mm;
+        if(request->number_in_y % 2 == 0)
+            y_offset_mm =  (request->number_in_y - 2.) / 2. * request->spacing_y_mm + 0.5 * request->spacing_y_mm;
+        else
+            y_offset_mm =  (request->number_in_y - 1.) / 2. * request->spacing_y_mm;
         for(size_t id = 0; id < markerIds.size(); id++){
             Eigen::Vector2d center;
             center.x() = request->x_offset_mm + static_cast<double>(markerIds.at(id) / static_cast<size_t>(request->number_in_y)) * request->spacing_x_mm;
-            center.y() = -1 * (y_offset_mm + static_cast<double>(markerIds.at(id) % static_cast<size_t>(request->number_in_y)) * request->spacing_y_mm);
+            center.y() = y_offset_mm - static_cast<double>(markerIds.at(id) % static_cast<size_t>(request->number_in_y)) * request->spacing_y_mm;
             debug_ss << "ID " << markerIds.at(id) << " CTR: " << center.transpose() << std::endl << std::endl;
             for(size_t c = 0; c < 4; c++){
                 Y.row(c + id * 4) = center + Eigen::Vector2d(1,0) * (c < 2 ? 1 : -1) * request->corner_dist_mm / 2.0 + Eigen::Vector2d(0,1) * (c % 3 == 0 ? 1 : -1) * request->corner_dist_mm / 2.0;
