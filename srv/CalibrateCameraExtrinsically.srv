@@ -5,7 +5,10 @@ uint32  number_in_y
 float64 corner_dist_mm
 float64 x_offset_mm
 float64 y_offset_mm
+bool activate_warp
+bool verbose
 ---
+string warp_transform
 geometry_msgs/Vector3 offset
 geometry_msgs/Vector3 scaling
 bool success
