@@ -16,3 +16,6 @@ camera_driver:
     publish_image_compressed: True
     image_compressed_topic: /camera/image/compressed
 
+    warp_parameters: [1.01809, -0.0017693, -49.6618, -0.0643359, 0.910625, 73.0445, 4.51389e-07, -8.62789e-05, 1.]
+    apply_warp: True
+

@@ -43,10 +43,15 @@ class CameraDriver : public rclcpp::Node {
         }
 
         // Configure ROS
+        std::vector<double> warp_parameters(9, 0.0);
         this->declare_parameter("frame_id", "camera_sensor_link");
         this->declare_parameter("ros_sample_period", 0.2);
         this->declare_parameter("ros_resolution_height", 1080);
         this->declare_parameter("ros_resolution_width", 30);
+        this->declare_parameter("warp_parameters", warp_parameters);
+        this->declare_parameter("apply_warp", false);
+
+
 
         this->declare_parameter("publish_image_raw", true);
         publish_raw = this->get_parameter("publish_image_raw").as_bool();
@@ -58,6 +63,15 @@ class CameraDriver : public rclcpp::Node {
 
         ros_resolution_height = this->get_parameter("ros_resolution_height").as_int();
         ros_resolution_width = this->get_parameter("ros_resolution_width").as_int();
+        apply_warp = this->get_parameter("apply_warp").as_bool();
+        warp_parameters = this->get_parameter("warp_parameters").as_double_array();
+
+        warp_transform = cv::Mat( 3, 3, CV_32FC1);
+        for(size_t i=0;i<3;i++) for(size_t j=0; j<3;j++) warp_transform.at<float>(i,j) = warp_parameters.at(3 * i + j);
+        std::cerr << warp_transform << std::endl;
+
+        
+
 
 
 
@@ -90,8 +104,9 @@ class CameraDriver : public rclcpp::Node {
             return;
         }
         if(publish_raw || publish_compressed){
-            if(warp_available) cv::warpPerspective(cv_image_raw, cv_image_raw, warp_transform, cv::Size(cam.options->video_width, cam.options->video_height));
-            cv::resize(cv_image_raw, cv_image_ds, cv::Size(ros_resolution_width,ros_resolution_height), cv::INTER_LINEAR);
+            if(apply_warp) cv::warpPerspective(cv_image_raw, cv_image_warped, warp_transform, cv::Size(cam.options->video_width, cam.options->video_height));
+            else cv_image_warped = cv_image_raw;
+            cv::resize(cv_image_warped, cv_image_ds, cv::Size(ros_resolution_width,ros_resolution_height), cv::INTER_LINEAR);
             cv_bridge_image.image = cv_image_ds;
             header.stamp = this->get_clock()->now();
         }
@@ -117,9 +132,6 @@ class CameraDriver : public rclcpp::Node {
 
     }
 
-    // void calibrateCameraIntrinsicallyCallback(){
-
-    // }
 
     void calibrateCameraExtrinsicallyCallback(
         const std::shared_ptr<rmw_request_id_t> request_header,
@@ -127,7 +139,8 @@ class CameraDriver : public rclcpp::Node {
         const std::shared_ptr<br_drivers::srv::CalibrateCameraExtrinsically::Response> response
     ){
         camera_lock.lock();
-
+        std::stringstream debug_ss;
+        debug_ss << "Extrinic Calibration Debug Output" << std::endl;
         std::vector<int> markerIds;
         std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
         cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_250);
@@ -135,6 +148,14 @@ class CameraDriver : public rclcpp::Node {
 
         // cv_image_raw = cv::imread("/home/budget_roomba_2/sven_space/ros_ws/src/camera_calib.jpg", cv::IMREAD_COLOR);
         cv::aruco::detectMarkers(cv_image_raw, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
+
+        if(markerIds.size() != request->number_in_x * request->number_in_y){
+            response->success = false;
+            response->message = "Did not detect all Aruco markers";
+            camera_lock.unlock();
+            return;
+        }
+
         std::array<cv::Point2f, 4u> border_points, dst_points;
         for(size_t id = 0; id < markerIds.size(); id++){
             if(markerIds.at(id) == 0) 
@@ -146,8 +167,6 @@ class CameraDriver : public rclcpp::Node {
             if(markerIds.at(id) == request->number_in_y * request->number_in_x - 1) 
                 border_points.at(3) = markerCorners.at(id).at(1);
         }
-        // size_t image_center_x = cv_image_raw.size().width / 2;
-        // size_t image_center_y = cv_image_raw.size().height / 2;
 
         dst_points.at(0).x = std::min(border_points.at(0).x, border_points.at(2).x);
         dst_points.at(2).x = dst_points.at(0).x;
@@ -179,61 +198,83 @@ class CameraDriver : public rclcpp::Node {
             dst_points.at(3).y = midpoint - delta_y / 2;
         }
 
+
         delta_x = dst_points.at(1).x - dst_points.at(0).x;
         delta_y = dst_points.at(0).y - dst_points.at(2).y;
-        std::cerr << "dx: " << delta_x << std::endl;
-        std::cerr << "dy: " << delta_y << std::endl;
-        std::cerr << "ra: " << ratio << std::endl;
+        debug_ss << "dx: " << delta_x << std::endl;
+        debug_ss << "dy: " << delta_y << std::endl;
+        debug_ss << "ra: " << ratio << std::endl;
+        cv::Mat warp_transform = cv::getPerspectiveTransform(border_points, dst_points);
+        
+        if(request->activate_warp){
+            apply_warp = true;
+            this->warp_transform = warp_transform;
+        }
+        
+        std::stringstream warp_transform_ss;
+        for(size_t i=0;i<3;i++) for(size_t j=0; j<3;j++) warp_transform_ss << warp_transform.at<double>(i,j) << ", ";
+        response->warp_transform = warp_transform_ss.str();
 
+        cv::warpPerspective(cv_image_raw, cv_image_warped, warp_transform, cv::Size(cam.options->video_width, cam.options->video_height));
+        markerIds.clear();
+        markerCorners.clear();
+        rejectedCandidates.clear();
 
+        // cv_image_raw = cv::imread("/home/budget_roomba_2/sven_space/ros_ws/src/camera_calib.jpg", cv::IMREAD_COLOR);
+        cv::aruco::detectMarkers(cv_image_warped, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
 
-
-        warp_transform = cv::getPerspectiveTransform(border_points, dst_points);
-        warp_available = true;
-        std::cerr << "W T: " << warp_transform << std::endl;
-
-
-
-        // // Construct Dataset
-        // Eigen::MatrixXd Y, X1, X2;;
-        // Y.resize(markerIds.size() * 4, 2);
-        // X1.resize(markerIds.size() * 4, 2);
-        // X2.resize(markerIds.size() * 4, 2);
-        // X1.col(1).fill(1);
-        // X2.col(1).fill(1);
+        // Construct Dataset
+        Eigen::MatrixXd Y, X1, X2;;
+        Y.resize(markerIds.size() * 4, 2);
+        X1.resize(markerIds.size() * 4, 2);
+        X2.resize(markerIds.size() * 4, 2);
+        X1.col(1).fill(1);
+        X2.col(1).fill(1);
 
         
-        // double y_offset_mm = -1 * (request->number_in_y - 1.) / 2. * request->spacing_y_mm;
-        // for(size_t id = 0; id < markerIds.size(); id++){
-        //     Eigen::Vector2d center;
-        //     center.x() = request->x_offset_mm + static_cast<double>(markerIds.at(id) / static_cast<size_t>(request->number_in_y)) * request->spacing_x_mm;
-        //     center.y() = -1 * (y_offset_mm + static_cast<double>(markerIds.at(id) % static_cast<size_t>(request->number_in_y)) * request->spacing_y_mm);
-        //     std::cerr << "ID " << markerIds.at(id) << " CTR: " << center.transpose() << std::endl << std::endl;
-        //     for(size_t c = 0; c < 4; c++){
-        //         Y.row(c + id * 4) = center + Eigen::Vector2d(1,0) * (c < 2 ? 1 : -1) * request->corner_dist_mm / 2.0 + Eigen::Vector2d(0,1) * (c % 3 == 0 ? 1 : -1) * request->corner_dist_mm / 2.0;
-        //         std::cerr << "\t\t<<>> " << c << " CRNR GT: " << Y.row(c + id * 4) << std::endl;
-        //         X1(c + id * 4, 0) = markerCorners.at(id).at(c).y;
-        //         X2(c + id * 4, 0) = markerCorners.at(id).at(c).x;
-        //         std::cerr << "\t\t<<>> " << c << " CRNR DT: " << X1(c + id * 4, 0) << " " << X2(c + id * 4, 0) << std::endl;
+        double y_offset_mm = -1 * (request->number_in_y - 1.) / 2. * request->spacing_y_mm;
+        for(size_t id = 0; id < markerIds.size(); id++){
+            Eigen::Vector2d center;
+            center.x() = request->x_offset_mm + static_cast<double>(markerIds.at(id) / static_cast<size_t>(request->number_in_y)) * request->spacing_x_mm;
+            center.y() = -1 * (y_offset_mm + static_cast<double>(markerIds.at(id) % static_cast<size_t>(request->number_in_y)) * request->spacing_y_mm);
+            debug_ss << "ID " << markerIds.at(id) << " CTR: " << center.transpose() << std::endl << std::endl;
+            for(size_t c = 0; c < 4; c++){
+                Y.row(c + id * 4) = center + Eigen::Vector2d(1,0) * (c < 2 ? 1 : -1) * request->corner_dist_mm / 2.0 + Eigen::Vector2d(0,1) * (c % 3 == 0 ? 1 : -1) * request->corner_dist_mm / 2.0;
+                debug_ss << "\t\t<<>> " << c << " CRNR GT: " << Y.row(c + id * 4) << std::endl;
+                X1(c + id * 4, 0) = markerCorners.at(id).at(c).y * static_cast<double>(ros_resolution_height) / cam.options->video_height;
+                X2(c + id * 4, 0) = markerCorners.at(id).at(c).x * static_cast<double>(ros_resolution_width) / cam.options->video_width;
+                debug_ss << "\t\t<<>> " << c << " CRNR DT: " << X1(c + id * 4, 0) << " " << X2(c + id * 4, 0) << std::endl;
 
-        //     }
-        // }
+            }
+        }
 
 
-        // // Perform Linear Regression
-        // Eigen::Vector2d sol_x = (X1.transpose() * X1).inverse() * X1.transpose() * Y.col(0);
-        // Eigen::Vector2d sol_y = (X2.transpose() * X2).inverse() * X2.transpose() * Y.col(1);
+        // Perform Linear Regression
+        Eigen::Vector2d sol_x = (X1.transpose() * X1).inverse() * X1.transpose() * Y.col(0);
+        Eigen::Vector2d sol_y = (X2.transpose() * X2).inverse() * X2.transpose() * Y.col(1);
         
-        // std::cerr << "SOLX: " << sol_x.transpose() << std::endl;
-        // std::cerr << "SOLY: " << sol_y.transpose() << std::endl;
-        // // std::cerr << X1 << std::endl;
-        // // std::cerr << Y << std::endl;
-        // std::cerr << "X ex: " << X1.block<10,2>(0,0).transpose() << std::endl;
-        // std::cerr << "SOLX ex: " << sol_x.transpose() * X1.block<10,2>(0,0).transpose() << std::endl;
-        // std::cerr << "GTX " << Y.col(0).block<10,1>(0,0) << std::endl;
+        debug_ss << "SOLX: " << sol_x.transpose() << std::endl;
+        debug_ss << "SOLY: " << sol_y.transpose() << std::endl;
+        // debug_ss << X1 << std::endl;
+        // debug_ss << Y << std::endl;
+        debug_ss << "X ex: " << X1.block<10,2>(0,0).transpose() << std::endl;
+        debug_ss << "SOLX ex: " << sol_x.transpose() * X1.block<10,2>(0,0).transpose() << std::endl;
+        debug_ss << "GTX " << Y.col(0).block<10,1>(0,0) << std::endl;
 
-        // std::cerr << "SOLY ex: " << sol_y.transpose() * X2.block<10,2>(0,0).transpose() << std::endl;
-        // std::cerr << "GTY " << Y.col(1).block<10,1>(0,0) << std::endl;
+        debug_ss << "SOLY ex: " << sol_y.transpose() * X2.block<10,2>(0,0).transpose() << std::endl;
+        debug_ss << "GTY " << Y.col(1).block<10,1>(0,0) << std::endl;
+        if(request->verbose) RCLCPP_INFO(this->get_logger(), const_cast<char*>(debug_ss.str().c_str()));
+
+
+        response->offset.x = sol_x.y();
+        response->offset.y = sol_y.y();
+        response->scaling.x = sol_x.x();
+        response->scaling.y = sol_y.x();
+        
+        response->success = true;
+        response->message = "success";
+
+
 
 
 
@@ -245,10 +286,10 @@ class CameraDriver : public rclcpp::Node {
     double rate;
     bool publish_raw;
     bool publish_compressed;
-    cv::Mat cv_image_raw, cv_image_ds;
-
+    bool apply_warp;
+    cv::Mat cv_image_raw, cv_image_warped, cv_image_ds;
     cv::Mat warp_transform;
-    bool warp_available = false;
+
         
     cv_bridge::CvImage cv_bridge_image;
     sensor_msgs::msg::Image ros_image_raw;
