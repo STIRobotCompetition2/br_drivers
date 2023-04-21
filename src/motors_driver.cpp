@@ -20,16 +20,26 @@ using std::placeholders::_1;
 #define PWM_GPIO_MOTOR_RIGHT 13
 #define DIRECTION_GPIO_MRIGHT 23
 #define DIRECTION_GPIO_MLEFT 24
+#define STARTUP_GPIO 17
+#define ON 1
+#define OFF 0
 #define GEAR_RATIO 60
-#define LBWheels 0.3                                //in meters
+#define LBWheels 0.42                                //in meters
 #define RWheels 0.0575                              //in meters
+// #define LBWheels 0.41                                //in meters
+//#define MAX_RPM 5000/60
 #define MAX_RPM 5000
 #define MIN_RPM 0
 #define MAX_PERCENTAGE 90
-#define MIN_PERCENTAGE 10
+#define MIN_PERCENTAGE 9
 #define CW 0
 #define CCW 1
 #define PWM_FREQ 100
+#define STARTUP_WAIT_TIME 500
+//--------------------------------------------------------------
+
+//Global variables----------------------------------------------
+bool startup = 0;
 //--------------------------------------------------------------
 
 
@@ -48,8 +58,24 @@ class MotorDriver : public rclcpp::Node
             }
             set_mode(gpio, PWM_GPIO_MOTOR_LEFT,PI_ALT0);
             set_mode(gpio, PWM_GPIO_MOTOR_RIGHT,PI_ALT0);
+            set_mode(gpio, PWM_GPIO_MOTOR_RIGHT,PI_ALT0);
+            set_mode(gpio, STARTUP_GPIO, PI_OUTPUT);
             set_PWM_frequency(gpio, PWM_GPIO_MOTOR_LEFT, PWM_FREQ);
             set_PWM_frequency(gpio, PWM_GPIO_MOTOR_RIGHT, PWM_FREQ);
+
+            RCLCPP_INFO(this->get_logger(),"Startup routine started\n");
+            set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_LEFT,30); //fully on is 1000000
+            set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_RIGHT,30);
+
+            rclcpp::sleep_for(std::chrono::milliseconds(100));
+
+            set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_LEFT,25); //fully on is 1000000
+            set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_RIGHT,25);
+            gpio_write(gpio,STARTUP_GPIO, OFF);
+            rclcpp::sleep_for(std::chrono::milliseconds(STARTUP_WAIT_TIME));
+            gpio_write(gpio,STARTUP_GPIO, ON);
+            RCLCPP_INFO(this->get_logger(),"Startup complete\n check if the ESCON controller led is GREEN!\n");
+            
             subscription_ = this-> create_subscription<geometry_msgs::msg::Twist>("/cmd_vel",10,std::bind(&MotorDriver::topic_callback, this, _1));
         }
 
@@ -70,6 +96,9 @@ class MotorDriver : public rclcpp::Node
 
             RPML = aVelL*60*GEAR_RATIO/(2*M_PI);
             RPMR = aVelR*60*GEAR_RATIO/(2*M_PI);
+
+            //RCLCPP_INFO(this->get_logger(),"RPML : '%f'",RPML); //FOR DEBUGGING
+            //RCLCPP_INFO(this->get_logger(),"RPMR : '%f'",RPMR); //FOR DEBUGGING
 
             if(RPML > MAX_RPM)
             {
@@ -97,8 +126,14 @@ class MotorDriver : public rclcpp::Node
             }
 
             //converting RPM's into percentage for pwm
-            PWM_L = (RPML-MIN_RPM)*(MAX_PERCENTAGE-MIN_PERCENTAGE)/MAX_RPM + MIN_PERCENTAGE;
-            PWM_R = (RPMR-MIN_RPM)*(MAX_PERCENTAGE-MIN_PERCENTAGE)/MAX_RPM + MIN_PERCENTAGE;
+            PWM_L = (std::fabs(RPML)-MIN_RPM)*(MAX_PERCENTAGE-MIN_PERCENTAGE)/MAX_RPM + MIN_PERCENTAGE;
+            PWM_R = (std::fabs(RPMR)-MIN_RPM)*(MAX_PERCENTAGE-MIN_PERCENTAGE)/MAX_RPM + MIN_PERCENTAGE;
+
+            //RCLCPP_INFO(this->get_logger(),"The linear velocity : '%f'",msg->linear.x); //FOR DEBUGGING PURPOSE
+            //RCLCPP_INFO(this->get_logger(),"The angular velocity : '%f'",msg->angular.z); //FOR DEBUGGING PURPOSE
+
+            //RCLCPP_INFO(this->get_logger(),"The left PWM is set to : '%f'",PWM_L);      //FOR DEBUGGING PURPOSE
+            //RCLCPP_INFO(this->get_logger(),"The Right PWM is set to : '%f' \n \n",PWM_R);     //FOR DEBUGGING PURPOSE
             
             //outputting the pwm duty cycle
             set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_LEFT,static_cast<size_t>(fabs(PWM_L)*255./100.)); //fully on is 1000000
@@ -112,8 +147,9 @@ class MotorDriver : public rclcpp::Node
 int main(int argc, char **argv)
 {
     rclcpp::init(argc,argv);
-    
+
     MotorDriver::SharedPtr md(new MotorDriver());
+
     rclcpp::spin(md);
 
     rclcpp::shutdown();
