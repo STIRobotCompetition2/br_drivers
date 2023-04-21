@@ -19,6 +19,8 @@
 
 
   <depend>rplidar_ros</depend>
+  <depend>br_description</depend>
+
 
 
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
