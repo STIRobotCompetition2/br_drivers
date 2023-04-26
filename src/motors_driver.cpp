@@ -8,6 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include <cmath>
+#include <std_srvs/srv/set_bool.hpp>
 //--------------------------------------------------------------
 
 //namespace-----------------------------------------------------
@@ -38,10 +39,19 @@ using std::placeholders::_1;
 #define STARTUP_WAIT_TIME 500
 //--------------------------------------------------------------
 
+//
+#define SERVO_FREQ 50
+#define SERVO_PIN 16
+#define SERVO_UP 2500
+#define SERVO_DOWN 500
+//
+
+
 //Global variables----------------------------------------------
 bool startup = 0;
 //--------------------------------------------------------------
 
+using namespace std::placeholders;
 
 //Function/class------------------------------------------------
 class MotorDriver : public rclcpp::Node
@@ -59,9 +69,13 @@ class MotorDriver : public rclcpp::Node
             set_mode(gpio, PWM_GPIO_MOTOR_LEFT,PI_ALT0);
             set_mode(gpio, PWM_GPIO_MOTOR_RIGHT,PI_ALT0);
             set_mode(gpio, PWM_GPIO_MOTOR_RIGHT,PI_ALT0);
+            set_mode(gpio, SERVO_PIN,PI_ALT0);
+
             set_mode(gpio, STARTUP_GPIO, PI_OUTPUT);
             set_PWM_frequency(gpio, PWM_GPIO_MOTOR_LEFT, PWM_FREQ);
             set_PWM_frequency(gpio, PWM_GPIO_MOTOR_RIGHT, PWM_FREQ);
+            set_PWM_frequency(gpio, SERVO_PIN, SERVO_FREQ);
+
 
             RCLCPP_INFO(this->get_logger(),"Startup routine started\n");
             set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_LEFT,30); //fully on is 1000000
@@ -77,6 +91,11 @@ class MotorDriver : public rclcpp::Node
             RCLCPP_INFO(this->get_logger(),"Startup complete\n check if the ESCON controller led is GREEN!\n");
             
             subscription_ = this-> create_subscription<geometry_msgs::msg::Twist>("/cmd_vel",10,std::bind(&MotorDriver::topic_callback, this, _1));
+            servo_service_ = this->create_service<std_srvs::srv::SetBool>(
+                "set_servo",
+                std::bind(&MotorDriver::set_servo_callback, this, _1, _2, _3)
+        );
+
         }
 
     private:
@@ -87,6 +106,38 @@ class MotorDriver : public rclcpp::Node
         double PWM_L = 0.0;
         double PWM_R = 0.0;
         int gpio;
+
+        void set_servo_callback(
+            const std::shared_ptr<rmw_request_id_t> request_header,
+            const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+            const std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+ 
+        {
+            response->success = true;
+
+            if(request->data){
+                RCLCPP_INFO(this->get_logger(), "Opening Gate ...");
+                rclcpp::sleep_for(std::chrono::milliseconds(1000));
+
+                set_servo_pulsewidth(gpio, SERVO_PIN, SERVO_UP);
+                response->message = "Gate is now open";
+
+                
+                RCLCPP_INFO(this->get_logger(), "... opened Gate !");
+            }
+            else {
+                RCLCPP_INFO(this->get_logger(), "Closing Gate ...");
+
+                set_servo_pulsewidth(gpio, SERVO_PIN, SERVO_DOWN);
+                rclcpp::sleep_for(std::chrono::milliseconds(1000));
+                response->message = "Gate is now closed";
+                RCLCPP_INFO(this->get_logger(), "... closed Gate !");
+
+                
+            }
+            
+
+        }
 
         void topic_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
         {
@@ -140,6 +191,7 @@ class MotorDriver : public rclcpp::Node
             set_PWM_dutycycle(gpio, PWM_GPIO_MOTOR_RIGHT,static_cast<size_t>(fabs(PWM_R)*255./100.)); 
         }
         rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr subscription_;
+        rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr servo_service_;
 };
 //--------------------------------------------------------------
 

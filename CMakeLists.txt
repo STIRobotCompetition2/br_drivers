@@ -22,6 +22,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 
+
 find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -82,7 +83,8 @@ ament_target_dependencies(
 ament_target_dependencies(
     motors_driver
     rclcpp
-    geometry_msgs    
+    geometry_msgs   
+    std_srvs 
 )
 
 target_link_libraries(motors_driver pigpiod_if2 rt)
